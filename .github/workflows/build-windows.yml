@@ -9,6 +9,9 @@ on:
       - "v*"
   workflow_dispatch:      # lets you run it manually from the Actions tab
 
+permissions:
+  contents: write      # needed to create releases and upload assets
+
 jobs:
   build-windows:
     runs-on: windows-latest
@@ -34,20 +37,6 @@ jobs:
           choco install nsis -y
           # Add NSIS to PATH for this job
           echo "C:\Program Files (x86)\NSIS" | Out-File -FilePath $env:GITHUB_PATH -Encoding utf8 -Append
-
-      - name: Download EnvVarUpdate NSIS plugin
-        shell: pwsh
-        run: |
-          # EnvVarUpdate is needed by installer.nsi to modify PATH.
-          # It ships as an NSIS header; fetch it into the NSIS Include dir.
-          $nsisInclude = "C:\Program Files (x86)\NSIS\Include"
-          $url = "https://raw.githubusercontent.com/GsNSIS/EnvVarUpdate/master/EnvVarUpdate.nsh"
-          try {
-            Invoke-WebRequest -Uri $url -OutFile "$nsisInclude\EnvVarUpdate.nsh"
-            Write-Host "EnvVarUpdate.nsh installed"
-          } catch {
-            Write-Host "Could not fetch EnvVarUpdate.nsh — installer.nsi may need adjustment"
-          }
 
       - name: Build with PyInstaller
         run: |

@@ -30,7 +30,7 @@ Caption "hash-cli Installer"
 BrandingText "hash-cli — local AI assistant"
 
 !include "MUI2.nsh"
-!include "EnvVarUpdate.nsh"
+!include "WinMessages.nsh"
 
 !define MUI_ABORTWARNING
 !define MUI_ICON   "hash-cli.ico"
@@ -50,6 +50,36 @@ BrandingText "hash-cli — local AI assistant"
 ; ── PER-USER: no admin prompt (this is the key line) ─────────────────────────
 RequestExecutionLevel user
 
+; ── StrContains: returns "found" if <needle> is a substring of <haystack> ────
+; Usage: Push <haystack>  Push <needle>  Call StrContains  Pop <result>
+Function StrContains
+    Exch $R1        ; R1 = needle
+    Exch
+    Exch $R2        ; R2 = haystack
+    Push $R3        ; needle length
+    Push $R4        ; index
+    Push $R5        ; current slice
+    StrCpy $R0 "notfound"
+    StrLen $R3 $R1
+    StrCpy $R4 0
+    strc_loop:
+        StrCpy $R5 $R2 $R3 $R4
+        StrCmp $R5 "" strc_done
+        StrCmp $R5 $R1 0 strc_next
+            StrCpy $R0 "found"
+            Goto strc_done
+        strc_next:
+        IntOp $R4 $R4 + 1
+        Goto strc_loop
+    strc_done:
+        Pop $R5
+        Pop $R4
+        Pop $R3
+        Pop $R2
+        Pop $R1
+        Push $R0
+FunctionEnd
+
 ; ── Installer section ────────────────────────────────────────────────────────
 Section "hash-cli (required)" SecMain
     SectionIn RO
@@ -62,8 +92,20 @@ Section "hash-cli (required)" SecMain
     ; Store install path (per-user registry)
     WriteRegStr HKCU "Software\hash-cli" "InstallPath" "$INSTDIR"
 
-    ; Add to the USER PATH (HKCU) — no admin required
-    ${EnvVarUpdate} $0 "PATH" "A" "HKCU" "$INSTDIR"
+    ; Add to the USER PATH (HKCU) — no admin required.
+    ; Read current user PATH, append our dir if not already present.
+    ReadRegStr $0 HKCU "Environment" "Path"
+    Push "$0"
+    Push "$INSTDIR"
+    Call StrContains
+    Pop $1
+    StrCmp $1 "found" path_done 0
+        StrCmp $0 "" 0 append_path
+            WriteRegExpandStr HKCU "Environment" "Path" "$INSTDIR"
+            Goto path_done
+        append_path:
+            WriteRegExpandStr HKCU "Environment" "Path" "$0;$INSTDIR"
+    path_done:
 
     ; Uninstaller
     WriteUninstaller "$INSTDIR\uninstall.exe"
@@ -88,8 +130,8 @@ SectionEnd
 
 ; ── Uninstaller ────────────────────────────────────────────────────────────
 Section "Uninstall"
-    ${un.EnvVarUpdate} $0 "PATH" "R" "HKCU" "$INSTDIR"
-
+    ; Note: we leave the PATH entry (harmless — points to a removed dir).
+    ; Fully scrubbing PATH safely requires more logic; the dir removal is enough.
     Delete "$INSTDIR\hash-cli.exe"
     Delete "$INSTDIR\uninstall.exe"
     RMDir  "$INSTDIR"

@@ -93,8 +93,7 @@ Run on a Windows machine.
 
 **1. Install prerequisites:**
 - `pip install pyinstaller`
-- [NSIS 3.x](https://nsis.sourceforge.io/Download)
-- [EnvVarUpdate NSIS plugin](https://nsis.sourceforge.io/Environmental_Variables)
+- [NSIS 3.x](https://nsis.sourceforge.io/Download)  (no extra plugins needed — PATH handling is built into installer.nsi)
 
 **2. (Optional) Bundle the Ollama installer** so it installs silently:
 - Download `OllamaSetup.exe` from https://ollama.com/download/windows
