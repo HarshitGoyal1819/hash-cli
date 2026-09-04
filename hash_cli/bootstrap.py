@@ -140,12 +140,15 @@ def install_ollama(console) -> bool:
 # ---------------------------------------------------------------------------
 
 def pull_model(model: str, console) -> bool:
-    """Pull an Ollama model, streaming progress to the console."""
+    """Pull an Ollama model, showing a single live-updating progress line."""
     console.print_info(f"Downloading {model} — this may take several minutes…")
     ollama_exe = _ollama_path() or "ollama"
+
+    # Access the underlying Rich console for a Live single-line display.
+    rich_console = getattr(console, "_console", None)
+
     try:
-        # encoding="utf-8" + errors="replace" prevents the Windows cp1252
-        # 'charmap' decode crash on Ollama's progress-bar bytes.
+        # encoding="utf-8" + errors="replace" avoids the Windows cp1252 crash.
         proc = subprocess.Popen(
             [ollama_exe, "pull", model],
             stdout=subprocess.PIPE,
@@ -155,26 +158,43 @@ def pull_model(model: str, console) -> bool:
             errors="replace",
             bufsize=1,
         )
-
-        # Ollama redraws progress on the same line using \r. Read in chunks
-        # and only show the latest status line (avoids console spam + crashes).
-        last_status = ""
-        buf = ""
         assert proc.stdout is not None
-        while True:
-            ch = proc.stdout.read(1)
-            if ch == "":
-                if proc.poll() is not None:
-                    break
-                continue
-            if ch in ("\r", "\n"):
-                line = buf.strip()
-                buf = ""
-                if line and line != last_status:
-                    last_status = line
+
+        # Ollama uses \r to redraw the SAME line. We read char-by-char,
+        # treat \r as "replace current line" and \n as "commit line", and
+        # render the latest status on ONE updating line via Rich Live.
+        buf = ""
+        current = ""
+
+        if rich_console is not None:
+            from rich.live import Live
+            from rich.text import Text
+
+            with Live(console=rich_console, refresh_per_second=12, transient=True) as live:
+                while True:
+                    ch = proc.stdout.read(1)
+                    if ch == "":
+                        if proc.poll() is not None:
+                            break
+                        continue
+                    if ch == "\r":
+                        current = buf.strip()
+                        buf = ""
+                        if current:
+                            live.update(Text(f"  {current}", style="hash.dim"))
+                    elif ch == "\n":
+                        current = buf.strip()
+                        buf = ""
+                        if current:
+                            live.update(Text(f"  {current}", style="hash.dim"))
+                    else:
+                        buf += ch
+        else:
+            # Fallback: plain line printing
+            for line in proc.stdout:
+                line = line.strip()
+                if line:
                     console.print(f"  [hash.dim]{line}[/hash.dim]")
-            else:
-                buf += ch
 
         proc.wait()
         if proc.returncode == 0:

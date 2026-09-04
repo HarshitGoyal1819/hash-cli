@@ -84,7 +84,7 @@ def mcp_add_server(
             name="celonis",
             url="https://tenant.celonis.cloud/.../mcp/abc123",
             auth_type="bearer",
-            token="ODJjMmFjZDQt..."
+            token="<your-bearer-token>"
         )
 
         # Stripe via stdio (uvx)
