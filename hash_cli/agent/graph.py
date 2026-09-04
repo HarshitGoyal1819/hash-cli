@@ -20,6 +20,27 @@ from hash_cli.agent.state import AgentState
 from hash_cli.tools import ALL_TOOLS
 
 
+def extract_text(content) -> str:
+    """Extract plain text from an AIMessage.content.
+
+    Handles str, list-of-content-blocks (Gemini 3.x / Anthropic), else str().
+    """
+    if isinstance(content, str):
+        return content
+    if isinstance(content, list):
+        parts = []
+        for block in content:
+            if isinstance(block, dict):
+                if "text" in block:
+                    parts.append(block["text"])
+                elif block.get("type") == "text" and "content" in block:
+                    parts.append(block["content"])
+            elif isinstance(block, str):
+                parts.append(block)
+        return "".join(parts).strip()
+    return str(content)
+
+
 @dataclass
 class AgentConfig:
     """Runtime configuration for the agent."""
@@ -84,7 +105,7 @@ def _coerce_tool_calls(response: AIMessage) -> AIMessage:
     if response.tool_calls:
         return response  # already correct
 
-    content = response.content if isinstance(response.content, str) else ""
+    content = extract_text(response.content)
     if not content.strip():
         return response
 
@@ -343,8 +364,9 @@ def stream_agent_realtime(
                                     tool_input=tc.get("args", {}),
                                 ))
                             if msg.content:
-                                text = msg.content if isinstance(msg.content, str) else str(msg.content)
-                                q.put(StreamEvent(kind="token", content=text))
+                                text = extract_text(msg.content)
+                                if text:
+                                    q.put(StreamEvent(kind="token", content=text))
                         elif isinstance(msg, ToolMessage):
                             q.put(StreamEvent(
                                 kind="tool_end",
@@ -414,8 +436,9 @@ def run_agent(
     final_text = ""
     for msg in reversed(all_messages):
         if isinstance(msg, AIMessage) and msg.content:
-            final_text = msg.content if isinstance(msg.content, str) else str(msg.content)
-            break
+            final_text = extract_text(msg.content)
+            if final_text:
+                break
 
     new_history = all_messages[len(history):]
     return final_text, list(history) + new_history
