@@ -35,8 +35,43 @@ def mark_bootstrapped() -> None:
     _MARKER.write_text("done", encoding="utf-8")
 
 
+def _ollama_path() -> str | None:
+    """Find the ollama executable, even if PATH wasn't refreshed after install.
+
+    Checks PATH first, then the known per-user/system install locations.
+    """
+    # 1. On PATH
+    p = shutil.which("ollama")
+    if p:
+        return p
+
+    # 2. Known install locations
+    import os
+    system = platform.system()
+    candidates: list[Path] = []
+    if system == "Windows":
+        localappdata = os.environ.get("LOCALAPPDATA", "")
+        candidates += [
+            Path(localappdata) / "Programs" / "Ollama" / "ollama.exe",
+            Path("C:/Program Files/Ollama/ollama.exe"),
+        ]
+    elif system == "Darwin":
+        candidates += [
+            Path("/usr/local/bin/ollama"),
+            Path("/opt/homebrew/bin/ollama"),
+            Path("/Applications/Ollama.app/Contents/Resources/ollama"),
+        ]
+    else:  # Linux
+        candidates += [Path("/usr/local/bin/ollama"), Path("/usr/bin/ollama")]
+
+    for c in candidates:
+        if c.exists():
+            return str(c)
+    return None
+
+
 def ollama_installed() -> bool:
-    return shutil.which("ollama") is not None
+    return _ollama_path() is not None
 
 
 # ---------------------------------------------------------------------------
@@ -105,10 +140,11 @@ def install_ollama(console) -> bool:
 def pull_model(model: str, console) -> bool:
     """Pull an Ollama model, streaming progress to the console."""
     console.print_info(f"Downloading {model} — this may take several minutes…")
+    ollama_exe = _ollama_path() or "ollama"
     try:
         # Run ollama pull and stream output live
         proc = subprocess.Popen(
-            ["ollama", "pull", model],
+            [ollama_exe, "pull", model],
             stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True,
         )
         for line in proc.stdout:  # type: ignore

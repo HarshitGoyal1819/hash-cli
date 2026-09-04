@@ -315,6 +315,8 @@ class HashConsole:
             ("/quit  or  exit",     "End the session"),
             ("/clear",              "Clear the screen"),
             ("/model",              "Switch AI model (Ollama free / OpenAI / Anthropic / Google)"),
+            ("/setup",              "Re-run first-time setup (install Ollama, pull a model)"),
+            ("/pull <model>",       "Download an Ollama model (e.g. /pull llama3.2:3b)"),
             ("/key list",           "Show stored API keys and their status"),
             ("/key set <ENV>",      "Add or reset an API key (e.g. /key set OPENAI_API_KEY)"),
             ("/key remove <ENV>",   "Delete a stored API key"),

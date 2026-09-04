@@ -196,10 +196,14 @@ def stop_ollama() -> bool:
         system = platform.system()
         try:
             if system == "Windows":
-                subprocess.run(
-                    ["taskkill", "/F", "/IM", "ollama.exe"],
-                    capture_output=True, timeout=5,
-                )
+                # Windows Ollama runs multiple processes: the tray app
+                # ("ollama app.exe") and the server ("ollama.exe").
+                # Kill all of them, ignoring errors for ones not present.
+                for image in ("ollama.exe", "ollama app.exe", "ollama_llama_server.exe"):
+                    subprocess.run(
+                        ["taskkill", "/F", "/T", "/IM", image],
+                        capture_output=True, timeout=5,
+                    )
             else:
                 subprocess.run(
                     ["pkill", "-SIGTERM", "ollama"],

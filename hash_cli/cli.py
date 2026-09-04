@@ -413,9 +413,10 @@ class SlashCommands:
                     ensure_ollama_running, stop_ollama, is_ollama_running
                 )
                 if prev_provider == "ollama" and new_provider != "ollama":
-                    # Switched away from local → stop Ollama, close its terminal
+                    # Switched away from local → stop Ollama
                     self.console.print_info("Switched to a cloud model — stopping Ollama…")
-                    if stop_ollama():
+                    stop_ollama()
+                    if not is_ollama_running():
                         self.console.print_success("Ollama stopped.")
                 elif prev_provider != "ollama" and new_provider == "ollama":
                     # Switched to local → make sure Ollama is running
@@ -427,6 +428,30 @@ class SlashCommands:
                 self.console.print_success(
                     f"Agent reloaded with model: {info['model']} ({info['provider']})"
                 )
+            return True
+
+        if cmd == "/setup":
+            # Re-run the first-time setup (install Ollama, pull a model)
+            from hash_cli.bootstrap import run_bootstrap
+            try:
+                run_bootstrap(self.console)
+                self.session.switch_model_from_config()
+            except (KeyboardInterrupt, EOFError):
+                self.console.print_info("Setup cancelled.")
+            return True
+
+        if cmd == "/pull":
+            # Pull an Ollama model directly: /pull llama3.2:3b
+            parts = cmd_raw.split(maxsplit=1)
+            if len(parts) < 2:
+                self.console.print_warning("Usage: /pull <model>   e.g. /pull llama3.2:3b")
+                return True
+            model = parts[1].strip()
+            from hash_cli.bootstrap import pull_model
+            from hash_cli.ollama_launcher import ensure_ollama_running, is_ollama_running
+            if not is_ollama_running():
+                ensure_ollama_running()
+            pull_model(model, self.console)
             return True
 
         if cmd == "/key" or cmd == "/keys":
@@ -815,13 +840,21 @@ def main(
     # ── Stop Ollama if we started it and provider is ollama ───────────
     active = get_active_model_info()
     if active["provider"] == "ollama":
-        from hash_cli.ollama_launcher import stop_ollama
+        import platform as _plat
+        from hash_cli.ollama_launcher import stop_ollama, is_ollama_running
         console.print_info("Stopping Ollama…")
-        stopped = stop_ollama()
-        if stopped:
-            console.print_success("Ollama stopped.")
+        stop_ollama()
+        if is_ollama_running():
+            if _plat.system() == "Windows":
+                console.print_warning(
+                    "Ollama is still running as a background app.\n"
+                    "   On Windows it auto-starts and lives in the system tray.\n"
+                    "   To fully quit it: click the Ollama icon in the tray (bottom-right) → Quit."
+                )
+            else:
+                console.print_warning("Could not fully stop Ollama — close it manually if needed.")
         else:
-            console.print_warning("Could not stop Ollama — you may need to close it manually.")
+            console.print_success("Ollama stopped.")
 
 
 if __name__ == "__main__":
