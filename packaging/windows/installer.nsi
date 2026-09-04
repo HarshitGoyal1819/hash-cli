@@ -33,8 +33,11 @@ BrandingText "hash-cli — local AI assistant"
 !include "WinMessages.nsh"
 
 !define MUI_ABORTWARNING
-!define MUI_ICON   "hash-cli.ico"
-!define MUI_UNICON "hash-cli.ico"
+; Icons are optional — only set them if the .ico file exists.
+!if /FileExists "hash-cli.ico"
+    !define MUI_ICON   "hash-cli.ico"
+    !define MUI_UNICON "hash-cli.ico"
+!endif
 
 !insertmacro MUI_PAGE_WELCOME
 !insertmacro MUI_PAGE_LICENSE  "..\..\packaging\macos\resources\license.txt"
