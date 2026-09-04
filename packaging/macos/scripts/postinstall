@@ -1,0 +1,63 @@
+#!/usr/bin/env bash
+# =============================================================================
+# hash-cli macOS postinstall — PER-USER install, NO admin required.
+# Runs after the pkg places the binary at ~/.local/bin/hash-cli
+# =============================================================================
+
+set -euo pipefail
+
+# For a home-directory pkg install, $HOME points at the target user's home.
+INSTALL_PATH="$HOME/.local/bin/hash-cli"
+BIN_DIR="$HOME/.local/bin"
+
+# Make sure the binary is executable
+[ -f "$INSTALL_PATH" ] && chmod +x "$INSTALL_PATH" || true
+
+# Ensure ~/.local/bin exists
+mkdir -p "$BIN_DIR"
+
+PATH_LINE='export PATH="$HOME/.local/bin:$PATH"'
+COMMENT='# Added by hash-cli installer'
+
+# Detect the user's shell and pick the right rc file
+USER_SHELL="${SHELL:-/bin/zsh}"
+case "$USER_SHELL" in
+    */zsh)
+        RC_FILE="$HOME/.zshrc"
+        ;;
+    */bash)
+        RC_FILE="$HOME/.bash_profile"
+        ;;
+    */fish)
+        FISH_CONFIG="$HOME/.config/fish/config.fish"
+        mkdir -p "$(dirname "$FISH_CONFIG")"
+        if ! grep -q ".local/bin" "$FISH_CONFIG" 2>/dev/null; then
+            {
+                echo ""
+                echo "$COMMENT"
+                echo 'fish_add_path $HOME/.local/bin'
+            } >> "$FISH_CONFIG"
+        fi
+        echo "hash-cli installed to ~/.local/bin — restart your terminal."
+        exit 0
+        ;;
+    *)
+        RC_FILE="$HOME/.profile"
+        ;;
+esac
+
+# Add ~/.local/bin to PATH if not already present
+if ! grep -q '.local/bin' "$RC_FILE" 2>/dev/null; then
+    {
+        echo ""
+        echo "$COMMENT"
+        echo "$PATH_LINE"
+    } >> "$RC_FILE"
+fi
+
+echo ""
+echo "hash-cli installed to ~/.local/bin (no admin needed)."
+echo "Restart your terminal, or run: source $RC_FILE"
+echo "Then type: hash-cli"
+echo ""
+exit 0

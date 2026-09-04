@@ -1,0 +1,3 @@
+# Build-time only — install in your build venv before running build scripts
+pyinstaller>=6.6.0
+pyinstaller-hooks-contrib>=2024.6

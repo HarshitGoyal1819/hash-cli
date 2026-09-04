@@ -1,0 +1,35 @@
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+*.egg
+.eggs/
+
+# Virtual environments
+.venv/
+venv/
+env/
+
+# PyInstaller build output
+build/
+dist/
+*.spec.bak
+
+# Packaging artifacts
+packaging/windows/OllamaSetup.exe
+*.pkg
+*.exe
+*.dmg
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# Editor
+.vscode/
+.idea/
+*.swp
+
+# hash-cli local runtime (never commit secrets)
+.hash-cli/
+*.env

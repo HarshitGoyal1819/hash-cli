@@ -1,0 +1,34 @@
+<?xml version="1.0" encoding="utf-8"?>
+<installer-gui-script minSpecVersion="2">
+    <title>hash-cli</title>
+    <welcome    file="welcome.rtf"    mime-type="text/rtf" />
+    <license    file="license.txt"    mime-type="text/plain" />
+    <conclusion file="conclusion.rtf" mime-type="text/rtf" />
+
+    <!-- Per-user install — no admin password required.
+         enable_currentUserHome + rootVolumeOnly=false makes it a Home install. -->
+    <options customize="never" require-scripts="false" rootVolumeOnly="false" />
+    <domains enable_anywhere="false" enable_currentUserHome="true" enable_localSystem="false" />
+
+    <choices-outline>
+        <line choice="default">
+            <line choice="com.hashcli.hash-cli" />
+        </line>
+    </choices-outline>
+
+    <choice id="default" />
+    <choice id="com.hashcli.hash-cli"
+            visible="false"
+            title="hash-cli"
+            description="Installs hash-cli to your home folder (~/.local/bin) — no admin needed">
+        <pkg-ref id="com.hashcli.hash-cli" />
+    </choice>
+
+    <pkg-ref id="com.hashcli.hash-cli"
+             version="0.1.0"
+             onConclusion="none">hash-cli.pkg</pkg-ref>
+
+    <allowed-os-versions>
+        <os-version min="12.0" />
+    </allowed-os-versions>
+</installer-gui-script>

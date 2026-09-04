@@ -1,0 +1,55 @@
+name: Build macOS Installer
+
+# Build the macOS .pkg installer on a GitHub-hosted macOS runner.
+# GitHub's macos-latest runners use universal2 Python, so this produces
+# a UNIVERSAL binary that runs on both Apple Silicon and Intel Macs.
+
+on:
+  push:
+    tags:
+      - "v*"
+  workflow_dispatch:
+
+jobs:
+  build-macos:
+    runs-on: macos-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Python 3.12 (universal2)
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip setuptools wheel
+          pip install -e .
+          pip install pyinstaller
+
+      - name: Build universal .pkg
+        run: |
+          chmod +x packaging/macos/build_mac.sh
+          bash packaging/macos/build_mac.sh
+
+      - name: Get version
+        id: version
+        run: echo "version=$(python -c 'import hash_cli; print(hash_cli.__version__)')" >> "$GITHUB_OUTPUT"
+
+      - name: Upload installer artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: hash-cli-macos-installer
+          path: dist/hash-cli-*-macos-*.pkg
+          if-no-files-found: warn
+          retention-days: 30
+
+      - name: Attach to release (on tag)
+        if: startsWith(github.ref, 'refs/tags/')
+        uses: softprops/action-gh-release@v2
+        with:
+          files: dist/hash-cli-*-macos-*.pkg
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

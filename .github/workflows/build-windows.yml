@@ -1,0 +1,94 @@
+name: Build Windows Installer
+
+# Build the Windows .exe installer on a GitHub-hosted Windows runner.
+# Triggers: on version tags (v*), and manually from the Actions tab.
+
+on:
+  push:
+    tags:
+      - "v*"
+  workflow_dispatch:      # lets you run it manually from the Actions tab
+
+jobs:
+  build-windows:
+    runs-on: windows-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Python 3.12
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          architecture: "x64"
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip setuptools wheel
+          pip install -e .
+          pip install pyinstaller
+
+      - name: Install NSIS
+        run: |
+          choco install nsis -y
+          # Add NSIS to PATH for this job
+          echo "C:\Program Files (x86)\NSIS" | Out-File -FilePath $env:GITHUB_PATH -Encoding utf8 -Append
+
+      - name: Download EnvVarUpdate NSIS plugin
+        shell: pwsh
+        run: |
+          # EnvVarUpdate is needed by installer.nsi to modify PATH.
+          # It ships as an NSIS header; fetch it into the NSIS Include dir.
+          $nsisInclude = "C:\Program Files (x86)\NSIS\Include"
+          $url = "https://raw.githubusercontent.com/GsNSIS/EnvVarUpdate/master/EnvVarUpdate.nsh"
+          try {
+            Invoke-WebRequest -Uri $url -OutFile "$nsisInclude\EnvVarUpdate.nsh"
+            Write-Host "EnvVarUpdate.nsh installed"
+          } catch {
+            Write-Host "Could not fetch EnvVarUpdate.nsh — installer.nsi may need adjustment"
+          }
+
+      - name: Build with PyInstaller
+        run: |
+          python -m PyInstaller hash_cli.spec --distpath dist --workpath build --noconfirm --target-arch x86_64
+
+      - name: Verify binary runs
+        run: |
+          dist\hash-cli.exe --help
+
+      - name: Build NSIS installer
+        shell: pwsh
+        run: |
+          $nsis = "C:\Program Files (x86)\NSIS\makensis.exe"
+          if (Test-Path $nsis) {
+            & $nsis "packaging\windows\installer.nsi"
+          } else {
+            Write-Host "makensis not found — uploading raw .exe instead"
+          }
+
+      - name: Get version
+        id: version
+        shell: pwsh
+        run: |
+          $v = python -c "import hash_cli; print(hash_cli.__version__)"
+          echo "version=$v" | Out-File -FilePath $env:GITHUB_OUTPUT -Encoding utf8 -Append
+
+      - name: Upload installer artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: hash-cli-windows-installer
+          path: |
+            dist/hash-cli-*-windows-*-setup.exe
+            dist/hash-cli.exe
+          if-no-files-found: warn
+          retention-days: 30
+
+      - name: Attach to release (on tag)
+        if: startsWith(github.ref, 'refs/tags/')
+        uses: softprops/action-gh-release@v2
+        with:
+          files: |
+            dist/hash-cli-*-windows-*-setup.exe
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
