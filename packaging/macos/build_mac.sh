@@ -26,17 +26,23 @@ PKG_SCRIPTS="$DIST/pkg_scripts"
 INSTALL_DIR=".local/bin"
 IDENTIFIER="com.hashcli.hash-cli"
 
-# ── Detect whether the Python can build universal2 ────────────────────────
-PY_ARCHS=$(python3 -c "import subprocess,sys; print(subprocess.run(['lipo','-archs',sys.executable],capture_output=True,text=True).stdout.strip())" 2>/dev/null || echo "")
-if echo "$PY_ARCHS" | grep -q "x86_64" && echo "$PY_ARCHS" | grep -q "arm64"; then
-    export HASHCLI_TARGET_ARCH="universal2"
+# ── Arch selection ────────────────────────────────────────────────────────
+# We build NATIVE single-arch. Universal2 is avoided because compiled
+# dependencies (pydantic_core, etc.) ship single-arch wheels, which makes
+# a universal2 PyInstaller build fail ("not a fat binary").
+#
+# Native arm64 binaries run on Intel Macs via Rosetta 2, so a native build
+# on an Apple Silicon runner covers effectively all modern Macs.
+#
+# To force universal later (needs universal2 wheels for ALL deps):
+#   export HASHCLI_TARGET_ARCH=universal2 before running this script.
+export HASHCLI_TARGET_ARCH="${HASHCLI_TARGET_ARCH:-native}"
+if [ "$HASHCLI_TARGET_ARCH" = "universal2" ]; then
     ARCH_LABEL="universal"
-    echo "▶  Universal2 Python detected — building UNIVERSAL binary."
 else
-    export HASHCLI_TARGET_ARCH="native"
     ARCH_LABEL="$(uname -m)"
-    echo "▶  Single-arch Python ($PY_ARCHS) — building native ($ARCH_LABEL) binary."
 fi
+echo "▶  Target arch: $HASHCLI_TARGET_ARCH ($ARCH_LABEL)"
 
 echo "▶  Building hash-cli $VERSION for macOS ($ARCH_LABEL)"
 echo ""

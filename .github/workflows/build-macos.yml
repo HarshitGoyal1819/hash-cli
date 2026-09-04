@@ -1,8 +1,9 @@
 name: Build macOS Installer
 
-# Build the macOS .pkg installer on a GitHub-hosted macOS runner.
-# GitHub's macos-latest runners use universal2 Python, so this produces
-# a UNIVERSAL binary that runs on both Apple Silicon and Intel Macs.
+# Build the macOS .pkg installer on a GitHub-hosted macOS runner (Apple Silicon).
+# Produces a native arm64 binary. arm64 runs on Intel Macs via Rosetta 2,
+# so this covers effectively all modern Macs. (Universal2 is avoided because
+# compiled deps like pydantic_core ship single-arch wheels.)
 
 on:
   push:
