@@ -37,13 +37,22 @@ def run_command(command: str, cwd: str = ".") -> str:
         return f"Error: Working directory not found: {cwd}"
 
     try:
+        # On Windows, let shell=True use cmd.exe (executable=None).
+        # On macOS/Linux, prefer zsh if present.
+        import platform as _plat
+        _exe = None
+        if _plat.system() != "Windows" and Path("/bin/zsh").exists():
+            _exe = "/bin/zsh"
+
         result = subprocess.run(
             command,
             shell=True,
-            executable="/bin/zsh" if Path("/bin/zsh").exists() else None,
+            executable=_exe,
             cwd=str(working_dir),
             capture_output=True,
             text=True,
+            encoding="utf-8",
+            errors="replace",
             timeout=_TIMEOUT,
         )
         parts: list[str] = []

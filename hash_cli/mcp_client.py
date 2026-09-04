@@ -329,6 +329,7 @@ class StdioMCPClient(MCPClient):
             [command] + (args or []),
             stdin=subprocess.PIPE, stdout=subprocess.PIPE,
             stderr=subprocess.PIPE, env=full_env, text=True,
+            encoding="utf-8", errors="replace",
         )
         self._lock = threading.Lock()
         self._initialized = False

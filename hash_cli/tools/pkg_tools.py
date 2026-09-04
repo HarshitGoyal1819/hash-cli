@@ -18,13 +18,20 @@ _TIMEOUT = 120  # package installs can be slow
 def _run(cmd: str, cwd: str = ".") -> str:
     """Run a shell command and return formatted output."""
     try:
+        import platform as _plat
+        _exe = None
+        if _plat.system() != "Windows" and Path("/bin/zsh").exists():
+            _exe = "/bin/zsh"
+
         result = subprocess.run(
             cmd,
             shell=True,
-            executable="/bin/zsh" if Path("/bin/zsh").exists() else None,
+            executable=_exe,
             cwd=str(Path(cwd).expanduser().resolve()),
             capture_output=True,
             text=True,
+            encoding="utf-8",
+            errors="replace",
             timeout=_TIMEOUT,
         )
         parts = []

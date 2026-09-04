@@ -265,8 +265,47 @@ def get_api_key(provider: str) -> str | None:
     return None
 
 
+# ── Custom user-added models ──────────────────────────────────────────────
+
+def get_custom_models() -> list[dict]:
+    """Return the list of user-added custom models from config."""
+    return _load().get("custom_models", [])
+
+
+def get_all_models() -> list[dict]:
+    """Return built-in models plus any custom user-added models."""
+    return list(MODELS) + get_custom_models()
+
+
+def add_custom_model(model: dict) -> tuple[bool, str]:
+    """Add a custom model definition. Returns (success, message)."""
+    required = {"id", "label", "provider", "model", "needs_key"}
+    missing = required - set(model.keys())
+    if missing:
+        return False, f"Missing fields: {', '.join(missing)}"
+
+    data = _load()
+    customs = data.setdefault("custom_models", [])
+    # Replace if an entry with the same id already exists
+    customs[:] = [m for m in customs if m.get("id") != model["id"]]
+    customs.append(model)
+    _save(data)
+    return True, f"Added custom model '{model['model']}'."
+
+
+def remove_custom_model(model_id: str) -> bool:
+    data = _load()
+    customs = data.get("custom_models", [])
+    new = [m for m in customs if m.get("id") != model_id]
+    if len(new) == len(customs):
+        return False
+    data["custom_models"] = new
+    _save(data)
+    return True
+
+
 def get_model_info(model_id: str) -> dict | None:
-    return next((m for m in MODELS if m["id"] == model_id), None)
+    return next((m for m in get_all_models() if m["id"] == model_id), None)
 
 
 def get_active_model_info() -> dict:

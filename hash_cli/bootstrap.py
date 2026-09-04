@@ -142,20 +142,43 @@ def pull_model(model: str, console) -> bool:
     console.print_info(f"Downloading {model} — this may take several minutes…")
     ollama_exe = _ollama_path() or "ollama"
     try:
-        # Run ollama pull and stream output live
+        # encoding="utf-8" + errors="replace" prevents the Windows cp1252
+        # 'charmap' decode crash on Ollama's progress-bar bytes.
         proc = subprocess.Popen(
             [ollama_exe, "pull", model],
-            stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.STDOUT,
+            text=True,
+            encoding="utf-8",
+            errors="replace",
+            bufsize=1,
         )
-        for line in proc.stdout:  # type: ignore
-            line = line.strip()
-            if line:
-                console.print(f"  [hash.dim]{line}[/hash.dim]")
+
+        # Ollama redraws progress on the same line using \r. Read in chunks
+        # and only show the latest status line (avoids console spam + crashes).
+        last_status = ""
+        buf = ""
+        assert proc.stdout is not None
+        while True:
+            ch = proc.stdout.read(1)
+            if ch == "":
+                if proc.poll() is not None:
+                    break
+                continue
+            if ch in ("\r", "\n"):
+                line = buf.strip()
+                buf = ""
+                if line and line != last_status:
+                    last_status = line
+                    console.print(f"  [hash.dim]{line}[/hash.dim]")
+            else:
+                buf += ch
+
         proc.wait()
         if proc.returncode == 0:
             console.print_success(f"{model} ready.")
             return True
-        console.print_error(f"Failed to download {model}.")
+        console.print_error(f"Failed to download {model} (exit {proc.returncode}).")
         return False
     except Exception as e:
         console.print_error(f"Error pulling {model}: {e}")

@@ -37,6 +37,104 @@ app = typer.Typer(
 # Model switcher UI
 # ---------------------------------------------------------------------------
 
+def _add_custom_model(console: "HashConsole", session: "Session") -> None:
+    """Interactive wizard to add a custom premium model."""
+    from hash_cli.config import add_custom_model, save_api_key_for_env, set_active_model
+
+    console.print("\n[hash.brand]  ── Add a custom model ──[/hash.brand]\n")
+    console.print("[hash.dim]  Add any model from a provider hash-cli supports.[/hash.dim]\n")
+
+    # ── Provider ─────────────────────────────────────────────────────────
+    console.print("  Provider:")
+    console.print("  [hash.accent]1[/hash.accent]  OpenAI-compatible  (OpenAI, DeepSeek, Together, Groq, OpenRouter, local vLLM…)")
+    console.print("  [hash.accent]2[/hash.accent]  Anthropic  (Claude)")
+    console.print("  [hash.accent]3[/hash.accent]  Google  (Gemini)")
+    p = console.prompt_raw("  provider [1/2/3] › ").strip()
+    provider_map = {"1": "openai", "2": "anthropic", "3": "google"}
+    provider = provider_map.get(p)
+    if not provider:
+        console.print_warning("Cancelled.")
+        return
+
+    # ── Model id ─────────────────────────────────────────────────────────
+    console.print("\n[hash.dim]  Exact model name from the provider "
+                  "(e.g. gpt-4o, claude-opus-4-8, deepseek-v4-pro, gemini-2.0-flash):[/hash.dim]")
+    model_name = console.prompt_raw("  model › ").strip()
+    if not model_name:
+        console.print_warning("Cancelled — no model name.")
+        return
+
+    # ── Friendly label ───────────────────────────────────────────────────
+    console.print("[hash.dim]  Display label (press Enter to use the model name):[/hash.dim]")
+    label = console.prompt_raw("  label › ").strip() or model_name
+    label = f"{label}  (premium, custom)"
+
+    # ── Env var + optional base_url ──────────────────────────────────────
+    default_env = {
+        "openai": "OPENAI_API_KEY",
+        "anthropic": "ANTHROPIC_API_KEY",
+        "google": "GOOGLE_API_KEY",
+    }[provider]
+
+    base_url = ""
+    if provider == "openai":
+        console.print(
+            f"\n[hash.dim]  API base URL — press Enter for OpenAI, or paste a custom one:\n"
+            f"    DeepSeek:   https://api.deepseek.com/v1\n"
+            f"    OpenRouter: https://openrouter.ai/api/v1\n"
+            f"    Together:   https://api.together.xyz/v1\n"
+            f"    Groq:       https://api.groq.com/openai/v1[/hash.dim]"
+        )
+        base_url = console.prompt_raw("  base_url › ").strip()
+        # Custom endpoints usually want their own key env var
+        if base_url:
+            console.print(f"[hash.dim]  Env var name for this provider's key (Enter for {default_env}):[/hash.dim]")
+            entered = console.prompt_raw("  env › ").strip()
+            if entered:
+                default_env = entered
+
+    key_env = default_env
+    model_id = f"custom/{provider}/{model_name}"
+
+    entry = {
+        "id":        model_id,
+        "label":     label,
+        "provider":  provider,
+        "model":     model_name,
+        "needs_key": True,
+        "key_env":   key_env,
+        "key_url":   "",
+    }
+    if base_url:
+        entry["base_url"] = base_url
+
+    ok, msg = add_custom_model(entry)
+    if not ok:
+        console.print_error(msg)
+        return
+    console.print_success(msg)
+
+    # ── API key ──────────────────────────────────────────────────────────
+    from hash_cli.config import get_api_key_for_env
+    if not get_api_key_for_env(key_env):
+        console.print(f"\n[hash.dim]  Paste the API key for {key_env} and press Enter:[/hash.dim]")
+        key = console.prompt_raw("  key › ").strip()
+        if key:
+            save_api_key_for_env(key_env, key)
+            console.print_success(f"Saved {key_env}.")
+
+    # ── Offer to activate ────────────────────────────────────────────────
+    console.print("\n[hash.dim]  Make this the active model now? (Y/n):[/hash.dim]")
+    if console.prompt_raw("  › ").strip().lower() != "n":
+        set_active_model(model_id)
+        session.switch_model_from_config()
+        if session.missing_key():
+            console.print_warning("Model set, but the key seems missing/invalid.")
+        else:
+            console.print_success(f"{model_name} is now active.")
+    console.print("")
+
+
 def _read_secret(console: "HashConsole", label: str = "  › ") -> str:
     """Read a secret (API key) with masked input, reliably across terminals.
 
@@ -251,8 +349,10 @@ def _get_pulled_ollama_models() -> list[str]:
 
 def run_model_switcher(console: HashConsole) -> bool:
     """Interactive model selection. Returns True if model was changed."""
-    from hash_cli.config import MODELS, get_active_model_id
+    from hash_cli.config import get_all_models, get_active_model_id, get_custom_models
+    all_models = get_all_models()
     active_id = get_active_model_id()
+    custom_ids = {m["id"] for m in get_custom_models()}
 
     console.print("")
     console.print("[hash.brand]  ── Select a model ──[/hash.brand]\n")
@@ -260,7 +360,7 @@ def run_model_switcher(console: HashConsole) -> bool:
     pulled = _get_pulled_ollama_models()
 
     console.print("[hash.success]  FREE  (runs locally via Ollama)[/hash.success]")
-    for i, m in enumerate(MODELS, start=1):
+    for i, m in enumerate(all_models, start=1):
         if not m["needs_key"]:
             active_tag = " ◀ active" if m["id"] == active_id else ""
             model_base = m["model"].split(":")[0]
@@ -274,17 +374,18 @@ def run_model_switcher(console: HashConsole) -> bool:
 
     console.print("")
     console.print("[hash.warning]  PREMIUM  (API key required)[/hash.warning]")
-    for i, m in enumerate(MODELS, start=1):
+    for i, m in enumerate(all_models, start=1):
         if m["needs_key"]:
             active_tag = " ◀ active" if m["id"] == active_id else ""
+            custom_tag = " [custom]" if m["id"] in custom_ids else ""
             color = "hash.tool_ok" if active_tag else "hash.dim"
             console.print(
                 f"  [hash.accent]{i:>2}.[/hash.accent] [hash.accent]{m['label']}[/hash.accent]"
-                f"[{color}]{active_tag}[/{color}]"
+                f"[hash.dim]{custom_tag}[/hash.dim][{color}]{active_tag}[/{color}]"
             )
 
     console.print("")
-    console.print(f"[hash.dim]  Enter a number (1–{len(MODELS)}) or press Enter to cancel:[/hash.dim]")
+    console.print(f"[hash.dim]  Enter a number (1–{len(all_models)}) or press Enter to cancel:[/hash.dim]")
 
     try:
         choice = console.prompt_raw("  › ").strip()
@@ -297,14 +398,14 @@ def run_model_switcher(console: HashConsole) -> bool:
 
     try:
         idx = int(choice) - 1
-        if idx < 0 or idx >= len(MODELS):
-            console.print_error(f"Please enter a number between 1 and {len(MODELS)}.")
+        if idx < 0 or idx >= len(all_models):
+            console.print_error(f"Please enter a number between 1 and {len(all_models)}.")
             return False
     except ValueError:
         console.print_error("Please enter a number.")
         return False
 
-    selected = MODELS[idx]
+    selected = all_models[idx]
     set_active_model(selected["id"])
 
     if selected["needs_key"]:
@@ -440,18 +541,72 @@ class SlashCommands:
                 self.console.print_info("Setup cancelled.")
             return True
 
-        if cmd == "/pull":
-            # Pull an Ollama model directly: /pull llama3.2:3b
-            parts = cmd_raw.split(maxsplit=1)
-            if len(parts) < 2:
-                self.console.print_warning("Usage: /pull <model>   e.g. /pull llama3.2:3b")
+        if cmd == "/addmodel" or cmd == "/add-model":
+            _add_custom_model(self.console, self.session)
+            return True
+
+        if cmd == "/removemodel" or cmd == "/remove-model":
+            from hash_cli.config import get_custom_models, remove_custom_model
+            customs = get_custom_models()
+            if not customs:
+                self.console.print_info("No custom models to remove.")
                 return True
-            model = parts[1].strip()
-            from hash_cli.bootstrap import pull_model
-            from hash_cli.ollama_launcher import ensure_ollama_running, is_ollama_running
+            self.console.print("\n[hash.brand]  Custom models:[/hash.brand]")
+            for i, m in enumerate(customs, 1):
+                self.console.print(f"  [hash.accent]{i}[/hash.accent]  {m['model']}  [hash.dim]({m['provider']})[/hash.dim]")
+            self.console.print("[hash.dim]  Enter number to remove, or Enter to cancel:[/hash.dim]")
+            ch = self.console.prompt_raw("  › ").strip()
+            if ch.isdigit() and 1 <= int(ch) <= len(customs):
+                m = customs[int(ch) - 1]
+                remove_custom_model(m["id"])
+                self.console.print_success(f"Removed {m['model']}.")
+            return True
+
+        if cmd == "/pull":
+            from hash_cli.bootstrap import pull_model, _STARTER_MODELS, _ollama_path
+            parts = cmd_raw.split(maxsplit=1)
+
+            # If a model name was given directly, pull it
+            if len(parts) >= 2:
+                model = parts[1].strip()
+            else:
+                # Otherwise show a numbered menu of the free models
+                self.console.print("\n[hash.brand]  Select a model to download:[/hash.brand]\n")
+                for i, (name, size, desc) in enumerate(_STARTER_MODELS, 1):
+                    self.console.print(
+                        f"  [hash.accent]{i}[/hash.accent]  {name:<20} "
+                        f"[hash.dim]({size}) — {desc}[/hash.dim]"
+                    )
+                self.console.print("  [hash.accent]c[/hash.accent]  cancel")
+                self.console.print(
+                    f"\n[hash.dim]  Enter a number (1–{len(_STARTER_MODELS)}), "
+                    f"or type any Ollama model name:[/hash.dim]"
+                )
+                choice = self.console.prompt_raw("  › ").strip().lower()
+                if not choice or choice == "c":
+                    self.console.print_info("Cancelled.")
+                    return True
+                if choice.isdigit() and 1 <= int(choice) <= len(_STARTER_MODELS):
+                    model = _STARTER_MODELS[int(choice) - 1][0]
+                else:
+                    # Treat whatever they typed as a model name
+                    model = choice
+
+            # Make sure Ollama is available before pulling
+            if not _ollama_path():
+                self.console.print_warning(
+                    "Ollama is not installed. Run /setup first to install it."
+                )
+                return True
             if not is_ollama_running():
                 ensure_ollama_running()
-            pull_model(model, self.console)
+
+            if pull_model(model, self.console):
+                # Offer to make it active
+                from hash_cli.config import set_active_model
+                set_active_model(f"ollama/{model}")
+                self.session.switch_model_from_config()
+                self.console.print_success(f"{model} is now the active model.")
             return True
 
         if cmd == "/key" or cmd == "/keys":
