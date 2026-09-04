@@ -1,21 +1,16 @@
 #!/usr/bin/env bash
 # =============================================================================
-# hash-cli macOS installer builder
+# hash-cli macOS installer builder — PER-USER, NO ADMIN.
 #
-# Produces: dist/hash-cli-<version>-macos-universal.pkg
+# Produces: dist/hash-cli-<version>-macos-<arch>.pkg
 #
-# The .pkg bundles:
-#   - hash-cli binary (Python runtime + ALL pip dependencies via PyInstaller)
-#   - PATH setup (so `hash-cli` works from any terminal)
-#   - postinstall runs first-run bootstrap prompts
+# Arch handling (PyInstaller reads HASHCLI_TARGET_ARCH from env — never pass
+# --target-arch on the CLI, that is illegal when a .spec file is used):
+#   - If the Python is universal2  → builds a UNIVERSAL binary (Intel + Apple Silicon)
+#   - Otherwise                     → builds a native single-arch binary
 #
-# Ollama + free models are installed on FIRST RUN (not bundled — they're 12GB+).
-#
-# Prerequisites (install once in your build venv):
-#   pip install pyinstaller
-#
-# Usage (from repo root):
-#   bash packaging/macos/build_mac.sh
+# The .pkg installs to ~/.local/bin (home folder) so NO admin password is asked.
+# Ollama + models are installed on first run.
 # =============================================================================
 
 set -euo pipefail
@@ -28,57 +23,51 @@ APP_NAME="hash-cli"
 DIST="$REPO_ROOT/dist"
 PKG_ROOT="$DIST/pkg_root"
 PKG_SCRIPTS="$DIST/pkg_scripts"
-# Per-user install path (relative to the user's home) — no admin needed.
-# The pkg install-location is the user's home; binary goes to ~/.local/bin.
 INSTALL_DIR=".local/bin"
 IDENTIFIER="com.hashcli.hash-cli"
 
-echo "▶  Building hash-cli $VERSION for macOS (universal)"
+# ── Detect whether the Python can build universal2 ────────────────────────
+PY_ARCHS=$(python3 -c "import subprocess,sys; print(subprocess.run(['lipo','-archs',sys.executable],capture_output=True,text=True).stdout.strip())" 2>/dev/null || echo "")
+if echo "$PY_ARCHS" | grep -q "x86_64" && echo "$PY_ARCHS" | grep -q "arm64"; then
+    export HASHCLI_TARGET_ARCH="universal2"
+    ARCH_LABEL="universal"
+    echo "▶  Universal2 Python detected — building UNIVERSAL binary."
+else
+    export HASHCLI_TARGET_ARCH="native"
+    ARCH_LABEL="$(uname -m)"
+    echo "▶  Single-arch Python ($PY_ARCHS) — building native ($ARCH_LABEL) binary."
+fi
+
+echo "▶  Building hash-cli $VERSION for macOS ($ARCH_LABEL)"
 echo ""
 
 # ── 1. Clean ────────────────────────────────────────────────────────────
-rm -rf build "$DIST/x86_64" "$DIST/arm64" "$PKG_ROOT" "$PKG_SCRIPTS"
+rm -rf build "$DIST/onefile" "$PKG_ROOT" "$PKG_SCRIPTS"
 mkdir -p "$PKG_ROOT/$INSTALL_DIR" "$PKG_SCRIPTS"
 
-# ── 2. Build both architecture slices ────────────────────────────────────
-echo "▶  Building x86_64 slice…"
-python3 -m PyInstaller hash_cli.spec \
-    --distpath "$DIST/x86_64" --workpath "build/x86_64" \
-    --noconfirm --target-arch x86_64
+# ── 2. Build the binary (arch chosen via HASHCLI_TARGET_ARCH env) ─────────
+python3 -m PyInstaller hash_cli.spec --distpath "$DIST/onefile" --workpath "build" --noconfirm
 
-echo "▶  Building arm64 slice…"
-python3 -m PyInstaller hash_cli.spec \
-    --distpath "$DIST/arm64" --workpath "build/arm64" \
-    --noconfirm --target-arch arm64
-
-# ── 3. Merge into a universal binary ──────────────────────────────────────
-echo "▶  Merging into universal binary with lipo…"
-lipo -create \
-    "$DIST/x86_64/hash-cli" \
-    "$DIST/arm64/hash-cli" \
-    -output "$PKG_ROOT/$INSTALL_DIR/hash-cli"
+cp "$DIST/onefile/hash-cli" "$PKG_ROOT/$INSTALL_DIR/hash-cli"
 chmod +x "$PKG_ROOT/$INSTALL_DIR/hash-cli"
-
 echo "   $(file "$PKG_ROOT/$INSTALL_DIR/hash-cli")"
 
-# ── 4. Postinstall script (PATH + welcome) ────────────────────────────────
+# ── 3. Postinstall (PATH setup, runs as the user) ─────────────────────────
 cp "$REPO_ROOT/packaging/macos/scripts/postinstall" "$PKG_SCRIPTS/postinstall"
 chmod +x "$PKG_SCRIPTS/postinstall"
 
-# ── 5. Build component pkg ────────────────────────────────────────────────
-COMPONENT_PKG="$DIST/hash-cli-component.pkg"
+# ── 4. Component pkg (installs into the user's home) ──────────────────────
 echo "▶  Building component package…"
-# install-location is the user's home (~) — pkg contents go under it.
 pkgbuild \
     --root       "$PKG_ROOT" \
     --scripts    "$PKG_SCRIPTS" \
     --identifier "$IDENTIFIER" \
     --version    "$VERSION" \
     --install-location "$HOME" \
-    "$COMPONENT_PKG"
+    "$DIST/hash-cli.pkg"
 
-# ── 6. Wrap in a distribution product pkg (with welcome/license screens) ───
-FINAL_PKG="$DIST/${APP_NAME}-${VERSION}-macos-universal.pkg"
+# ── 5. Distribution product pkg (welcome/license, per-user domain) ────────
+FINAL_PKG="$DIST/${APP_NAME}-${VERSION}-macos-${ARCH_LABEL}.pkg"
 RES="$REPO_ROOT/packaging/macos/resources"
 
 if [ -f "$RES/distribution.xml" ]; then
@@ -89,17 +78,12 @@ if [ -f "$RES/distribution.xml" ]; then
         --package-path "$DIST" \
         "$FINAL_PKG"
 else
-    cp "$COMPONENT_PKG" "$FINAL_PKG"
+    cp "$DIST/hash-cli.pkg" "$FINAL_PKG"
 fi
 
-rm -f "$COMPONENT_PKG"
+rm -f "$DIST/hash-cli.pkg"
 
 echo ""
 echo "✓  Installer ready:  $FINAL_PKG"
-echo ""
-echo "   Install (NO admin password needed — double-click the pkg, or):"
+echo "   Install (NO admin needed): double-click the pkg, or:"
 echo "     installer -pkg \"$FINAL_PKG\" -target CurrentUserHomeDirectory"
-echo "   Then open a NEW terminal and run:"
-echo "     hash-cli"
-echo ""
-echo "   (On first run, hash-cli will offer to install Ollama and pull a model.)"

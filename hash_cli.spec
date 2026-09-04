@@ -4,6 +4,7 @@
 # Build on macOS  → dist/hash-cli   (then wrapped into .pkg)
 # Build on Windows → dist/hash-cli.exe (then wrapped into NSIS installer)
 
+import os
 import platform
 from pathlib import Path
 from PyInstaller.utils.hooks import collect_all, collect_submodules
@@ -98,7 +99,15 @@ exe = EXE(
     console=True,       # CLI — must stay True
     disable_windowed_traceback=False,
     argv_emulation=False,
-    target_arch=None,   # overridden by build scripts (x86_64 / arm64)
+    # target_arch is read from the HASHCLI_TARGET_ARCH env var so build scripts
+    # can select the arch WITHOUT passing --target-arch (which is illegal with a spec).
+    #   unset / "native"    → current arch
+    #   "universal2"        → universal (needs a universal2 Python)
+    #   "x86_64" / "arm64"  → specific slice
+    target_arch=(
+        None if os.environ.get("HASHCLI_TARGET_ARCH", "native") in ("", "native")
+        else os.environ["HASHCLI_TARGET_ARCH"]
+    ),
     codesign_identity=None,
     entitlements_file=None,
     icon=(

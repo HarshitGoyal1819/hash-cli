@@ -37,8 +37,7 @@ Write-Host "Running PyInstaller..." -ForegroundColor Cyan
 python -m PyInstaller hash_cli.spec `
     --distpath "dist" `
     --workpath "build\windows" `
-    --noconfirm `
-    --target-arch x86_64
+    --noconfirm
 
 if (-not (Test-Path "dist\hash-cli.exe")) {
     Write-Host "PyInstaller did not produce dist\hash-cli.exe" -ForegroundColor Red
