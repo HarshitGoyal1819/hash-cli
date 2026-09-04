@@ -510,9 +510,9 @@ class SlashCommands:
                 new_provider = info.get("provider")
 
                 # ── Manage Ollama lifecycle on provider change ──────────
-                from hash_cli.ollama_launcher import (
-                    ensure_ollama_running, stop_ollama, is_ollama_running
-                )
+                # (ensure_ollama_running / stop_ollama / is_ollama_running are
+                #  imported at module top — do NOT re-import locally or Python
+                #  treats them as locals for the whole method → UnboundLocalError.)
                 if prev_provider == "ollama" and new_provider != "ollama":
                     # Switched away from local → stop Ollama
                     self.console.print_info("Switched to a cloud model — stopping Ollama…")

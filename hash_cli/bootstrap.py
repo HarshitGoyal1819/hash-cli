@@ -18,11 +18,13 @@ from hash_cli.config import CONFIG_DIR
 
 _MARKER = CONFIG_DIR / ".bootstrapped"
 
-# Free models offered on first run, smallest first
+# Free models offered on first run / via /pull, smallest first
 _STARTER_MODELS = [
-    ("llama3.2:3b",     "2 GB", "fastest, good for quick tasks"),
-    ("llama3.1:8b",     "5 GB", "best all-round free model"),
-    ("qwen2.5-coder:7b","5 GB", "best for coding"),
+    ("llama3.2:3b",       "2 GB",  "fastest, good for quick tasks"),
+    ("llama3.1:8b",       "5 GB",  "best all-round free model"),
+    ("qwen2.5-coder:7b",  "5 GB",  "best for coding"),
+    ("deepseek-r1:8b",    "5 GB",  "strong reasoning"),
+    ("llama4:scout",      "~10 GB","Meta MoE, multimodal (needs 16GB+ RAM)"),
 ]
 
 
@@ -224,7 +226,7 @@ def run_bootstrap(console) -> None:
     console.print("  [hash.accent]s[/hash.accent]  skip (I'll use cloud models or pull later)")
     choice = console.prompt_raw("  › ").strip().lower()
 
-    if choice in ("1", "2", "3"):
+    if choice.isdigit() and 1 <= int(choice) <= len(_STARTER_MODELS):
         model = _STARTER_MODELS[int(choice) - 1][0]
         # Ensure Ollama server is up before pulling
         from hash_cli.ollama_launcher import ensure_ollama_running
