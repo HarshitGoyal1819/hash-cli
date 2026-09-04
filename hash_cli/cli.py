@@ -19,7 +19,7 @@ from hash_cli.config import (
     get_api_key_for_env, save_api_key_for_env,
     remove_api_key_for_env, list_stored_keys,
 )
-from hash_cli.ollama_launcher import ensure_ollama_running, is_ollama_running
+from hash_cli.ollama_launcher import ensure_ollama_running, is_ollama_running, stop_ollama
 from hash_cli.tools import ALL_TOOLS
 from hash_cli.ui import HashConsole
 
@@ -841,7 +841,6 @@ def main(
     active = get_active_model_info()
     if active["provider"] == "ollama":
         import platform as _plat
-        from hash_cli.ollama_launcher import stop_ollama, is_ollama_running
         console.print_info("Stopping Ollama…")
         stop_ollama()
         if is_ollama_running():
