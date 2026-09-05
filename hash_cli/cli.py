@@ -3,8 +3,13 @@
 from __future__ import annotations
 
 import os
+import warnings
 from pathlib import Path
 from typing import Optional
+
+# Suppress noisy third-party warnings (Gemini "temperature ignored", etc.)
+warnings.filterwarnings("ignore", category=UserWarning)
+warnings.filterwarnings("ignore", category=DeprecationWarning)
 
 import typer
 from langchain_core.messages import BaseMessage
