@@ -128,24 +128,42 @@ class HashConsole:
         tool_log: list = []
         captured_usage: UsageStats | None = None
 
-        with Live(
+        # Each tool call is printed IMMEDIATELY and PERMANENTLY as it happens.
+        live = Live(
             Spinner("dots", text="  Thinking…", style="hash.accent"),
             console=self._console,
             refresh_per_second=20,
             transient=True,
-        ) as live:
+        )
+        live.start()
+        spinner_running = True
+
+        def _pause_spinner():
+            nonlocal spinner_running
+            if spinner_running:
+                live.stop()
+                spinner_running = False
+
+        def _resume_spinner(text="  Thinking…"):
+            nonlocal spinner_running
+            live.update(Spinner("dots", text=text, style="hash.accent"))
+            if not spinner_running:
+                live.start()
+                spinner_running = True
+
+        try:
             for event in events:
                 if event.kind == "tool_start":
-                    live.update(Spinner(
-                        "dots2",
-                        text=f"  {event.tool_name}…",
-                        style="hash.tool_name",
-                    ))
+                    _pause_spinner()
+                    self._print_tool_call(event.tool_name, event.tool_input)
+                    _resume_spinner(f"  running {event.tool_name}…")
                     tool_log.append(("start", event.tool_name, event.tool_input))
 
                 elif event.kind == "tool_end":
+                    _pause_spinner()
+                    self._print_tool_result(event.tool_name, event.tool_output)
+                    _resume_spinner()
                     tool_log.append(("end", event.tool_name, event.tool_output))
-                    live.update(Spinner("dots", text="  Thinking…", style="hash.accent"))
 
                 elif event.kind == "token":
                     full_text += event.content
@@ -154,9 +172,8 @@ class HashConsole:
                     captured_usage = event.usage
 
                 elif event.kind == "error":
-                    live.stop()
+                    _pause_spinner()
                     err = event.content
-                    # Detect out-of-memory / model-crash errors and give guidance
                     if any(sig in err.lower() for sig in
                            ("killed", "status code: 500", "out of memory", "oom", "terminated")):
                         self._console.print(
@@ -166,15 +183,13 @@ class HashConsole:
                             "   Or use a cloud model (DeepSeek V4 Flash) which doesn't use local RAM.[/hash.dim]"
                         )
                     else:
-                        self._console.print(
-                            f"[hash.error]✗  {escape(err)}[/hash.error]"
-                        )
+                        self._console.print(f"[hash.error]✗  {escape(err)}[/hash.error]")
                     getter = getattr(events, "get_history", None)
                     history = getter() if callable(getter) else []
                     return history, None
-
-        if tool_log:
-            self._print_tool_summary(tool_log)
+        finally:
+            if spinner_running:
+                live.stop()
 
         clean = _strip_raw_tool_json(full_text)
         if clean:
@@ -237,6 +252,43 @@ class HashConsole:
                 line.append(f"  │  session: {session_total:,}", style="hash.dim")
 
         self._console.print(line)
+    # ------------------------------------------------------------------
+    # Live per-tool display (printed permanently as each tool runs)
+    # ------------------------------------------------------------------
+
+    def _print_tool_call(self, tool_name: str, args: dict) -> None:
+        """Print a tool invocation line the moment it starts — always visible."""
+        desc = _tool_human_desc(tool_name, args)
+        header = Text()
+        header.append("  ⚙ ", style="hash.tool_name")
+        header.append(tool_name, style="hash.tool_name")
+        if desc:
+            header.append("  " + desc, style="hash.tool_io")
+        self._console.print(header)
+
+        if tool_name == "run_command" and args.get("command"):
+            self._console.print(
+                f"      [hash.dim]$[/hash.dim] [hash.accent]{escape(str(args['command']))}[/hash.accent]"
+            )
+        elif tool_name == "manage_packages":
+            action = args.get("action", "")
+            pkgs = ", ".join(args.get("packages", []) or [])
+            mgr = args.get("manager", "auto")
+            self._console.print(
+                f"      [hash.dim]$[/hash.dim] [hash.accent]{mgr} {action} {escape(pkgs)}[/hash.accent]"
+            )
+
+    def _print_tool_result(self, tool_name: str, output: str) -> None:
+        """Print the tool's result right after it completes."""
+        if not output:
+            return
+        lines = str(output).strip().splitlines()
+        MAX = 8
+        for ln in lines[:MAX]:
+            self._console.print(f"      [hash.tool_io]{escape(ln[:200])}[/hash.tool_io]")
+        if len(lines) > MAX:
+            self._console.print(f"      [hash.dim]… (+{len(lines) - MAX} more lines)[/hash.dim]")
+
     # ------------------------------------------------------------------
     # Tool summary + assistant panel
     # ------------------------------------------------------------------
